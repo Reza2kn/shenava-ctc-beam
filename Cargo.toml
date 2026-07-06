@@ -1,0 +1,29 @@
+[package]
+name = "shenava-ctc-beam"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+authors = ["Reza Sayar <rsayar@uvic.ca>"]
+description = "Hotword-boosted CTC prefix-beam decoder for on-device ASR — a faithful, dependency-free pyctcdecode port."
+repository = "https://github.com/Reza2kn/shenava-ctc-beam"
+homepage = "https://shenava.app"
+readme = "README.md"
+license = "Apache-2.0"
+keywords = ["asr", "ctc", "beam-search", "speech", "hotword"]
+categories = ["algorithms", "text-processing"]
+
+[lib]
+name = "shenava_ctc_beam"
+path = "src/lib.rs"
+
+[[bin]]
+name = "shenava-decode"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
