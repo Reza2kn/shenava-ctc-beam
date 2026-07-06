@@ -36,6 +36,8 @@ struct Package {
     #[serde(default)]
     pareto_optimal: bool,
     #[serde(default)]
+    dev_only: bool,
+    #[serde(default)]
     targets: Vec<String>,
 }
 #[derive(Deserialize, Default)]
@@ -94,26 +96,38 @@ fn main() {
     let storage = arg("--storage-mb").and_then(|s| s.parse().ok()).unwrap_or(u64::MAX / 2);
     let budget = arg("--budget-mb").and_then(|s| s.parse().ok()).unwrap_or(u64::MAX / 2);
 
-    println!("device: {} MB RAM · {} storage · budget {}",
+    let dev_mode = flag("--dev");
+    println!("device: {} MB RAM · {} storage · budget {}{}",
              ram,
              if storage == u64::MAX / 2 { "∞".into() } else { format!("{} MB", storage) },
-             if budget == u64::MAX / 2 { "∞".into() } else { format!("{} MB", budget) });
+             if budget == u64::MAX / 2 { "∞".into() } else { format!("{} MB", budget) },
+             if dev_mode { "   [DEV MODE — all models unlocked]" } else { "" });
 
+    // Production policy: Rizeh/Pizeh never ship naked; only Koochik solo. dev_only tiers hidden
+    // unless dev mode is on.
     let fits = |p: &&Package| {
-        p.requires.min_ram_mb <= ram && p.total_mb <= budget && p.requires.min_storage_mb <= storage
+        (dev_mode || !p.dev_only)
+            && p.requires.min_ram_mb <= ram
+            && p.total_mb <= budget
+            && p.requires.min_storage_mb <= storage
     };
     let candidates: Vec<&Package> = reg.packages.iter().filter(fits).collect();
 
-    // prefer Pareto-optimal, then lowest keyword-band error; fall back to any-that-fits, then smallest.
-    let pick = candidates
+    if candidates.is_empty() {
+        println!("\n⚠ no {}package fits this device.", if dev_mode { "" } else { "production " });
+        if !dev_mode {
+            println!("  production floor: needs ~300 MB RAM to hold Vosk-small — Rizeh/Pizeh never ship naked,");
+            println!("  and only Koochik may go solo. Run with --dev to unlock the naked small models.");
+        }
+        return;
+    }
+    // prefer Pareto-optimal, then lowest keyword-band error.
+    let p = *candidates
         .iter()
         .filter(|p| p.pareto_optimal)
         .min_by(|a, b| a.ess_kw.partial_cmp(&b.ess_kw).unwrap())
         .or_else(|| candidates.iter().min_by(|a, b| a.ess_kw.partial_cmp(&b.ess_kw).unwrap()))
-        .copied()
-        .or_else(|| reg.packages.iter().min_by_key(|p| p.total_mb));
-
-    let Some(p) = pick else { eprintln!("no package fits — impossible"); return; };
+        .unwrap();
 
     println!("\n▶ selected: {}  ({} MB, {}, keyword-band {:.2}, {} ms/utt{})",
              p.id, p.total_mb, p.mode, p.ess_kw, p.decode_ms,

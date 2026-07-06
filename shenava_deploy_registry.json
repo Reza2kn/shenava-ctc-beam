@@ -18,9 +18,9 @@
   },
   "beam_config": { "beam_width": 80, "hotword_weight": 10.0, "token_min_logp": -5.0, "beam_prune_logp": -10.0, "min_hotword_chars": 3 },
   "packages": [
-    { "id": "pizeh-stream",       "components": ["pizeh-int4"],                    "total_mb": 14,   "mode": "stream-greedy",  "ess_kw": 38.25, "decode_ms": 4,   "requires": { "min_ram_mb": 64,   "offline": true }, "targets": ["32-bit TV", "Cortex-A7", "anything"], "pareto_optimal": true },
-    { "id": "rizeh-stream",       "components": ["rizeh-int4"],                    "total_mb": 40,   "mode": "stream-greedy",  "ess_kw": 18.10, "decode_ms": 6,   "requires": { "min_ram_mb": 128,  "offline": true }, "targets": ["low phone", "set-top box"], "pareto_optimal": true },
-    { "id": "pizeh-vosk-small",   "components": ["pizeh-int4", "vosk-small-fa"],   "total_mb": 111,  "mode": "stream+rescore", "ess_kw": 20.20, "decode_ms": 406, "requires": { "min_ram_mb": 300,  "offline": true }, "targets": ["niche: Vosk fits but 137MB doesn't"], "pareto_optimal": false, "dominated_by": "rizeh-stream (40MB, ess 18.1 — smaller AND better)" },
+    { "id": "pizeh-stream",       "components": ["pizeh-int4"],                    "total_mb": 14,   "mode": "stream-greedy",  "ess_kw": 38.25, "decode_ms": 4,   "requires": { "min_ram_mb": 64,   "offline": true }, "targets": ["DEV MODE ONLY — too weak to ship naked"], "pareto_optimal": true, "dev_only": true },
+    { "id": "rizeh-stream",       "components": ["rizeh-int4"],                    "total_mb": 40,   "mode": "stream-greedy",  "ess_kw": 18.10, "decode_ms": 6,   "requires": { "min_ram_mb": 128,  "offline": true }, "targets": ["DEV MODE ONLY — too weak to ship naked"], "pareto_optimal": true, "dev_only": true },
+    { "id": "pizeh-vosk-small",   "components": ["pizeh-int4", "vosk-small-fa"],   "total_mb": 111,  "mode": "stream+rescore", "ess_kw": 20.20, "decode_ms": 406, "requires": { "min_ram_mb": 300,  "offline": true }, "targets": ["weakest shippable device (smallest production package)"], "pareto_optimal": true },
     { "id": "rizeh-vosk-small",   "components": ["rizeh-int4", "vosk-small-fa"],   "total_mb": 137,  "mode": "stream+rescore", "ess_kw": 12.30, "decode_ms": 408, "requires": { "min_ram_mb": 300,  "offline": true }, "targets": ["mid phone"], "pareto_optimal": true },
     { "id": "koochik-stream",     "components": ["koochik-int4"],                  "total_mb": 138,  "mode": "stream-greedy",  "ess_kw": 10.55, "decode_ms": 11,  "requires": { "min_ram_mb": 400,  "offline": true }, "targets": ["mid/high phone (no Vosk)"], "pareto_optimal": true },
     { "id": "koochik-vosk-small", "components": ["koochik-int4", "vosk-small-fa"], "total_mb": 235,  "mode": "stream+rescore", "ess_kw": 8.75,  "decode_ms": 413, "requires": { "min_ram_mb": 600,  "offline": true }, "targets": ["high phone", "tablet"], "pareto_optimal": true },
@@ -28,10 +28,15 @@
     { "id": "rizeh-vosk-big",     "components": ["rizeh-int4", "vosk-big-fa"],     "total_mb": 2700, "mode": "stream+rescore", "ess_kw": 10.35, "decode_ms": 762, "requires": { "min_ram_mb": 3500, "offline": true, "min_storage_mb": 2900 }, "targets": ["storage-rich mid box"], "pareto_optimal": false, "dominated_by": "koochik-vosk-small (235MB, ess 8.75 — 11x smaller AND better)" },
     { "id": "koochik-vosk-big",   "components": ["koochik-int4", "vosk-big-fa"],   "total_mb": 2798, "mode": "stream+rescore", "ess_kw": 7.55,  "decode_ms": 767, "requires": { "min_ram_mb": 3500, "offline": true, "min_storage_mb": 3000 }, "targets": ["desktop", "storage-rich box"], "pareto_optimal": true }
   ],
-  "pareto_note": "Full 3x2 rescore matrix + 3 stream = 9 packages. Only 6 are Pareto-optimal (best ess_kw for their size). The 3 pizeh/rizeh + big-Vosk combos are dominated (a smaller package gives equal-or-better keywords) because Vosk-big's 2.6GB dwarfs the acoustic model, so you might as well pair it with a stronger encoder — or use a Pareto-optimal tier. Kept for completeness / edge device constraints; app selection should prefer pareto_optimal:true unless a hard size/RAM band forces otherwise.",
+  "production_policy": {
+    "quality_floor": "Rizeh (32M) and Pizeh (6.9M) are too weak to ship NAKED (ess 18 / 38) — they only ship WITH a Vosk second pass (small or big). Only Koochik (114M) is accurate enough to go solo (koochik-stream). The two stream-only small packages (pizeh-stream, rizeh-stream) are therefore dev_only:true — hidden from production selection.",
+    "dev_mode": "A dev toggle unlocks dev_only packages (all 9) for testing/debugging. Off by default in shipped apps.",
+    "weakest_shippable": "pizeh-vosk-small (111MB) — the smallest PRODUCTION package. Devices that cannot hold even Vosk-small are not served in production (by design)."
+  },
   "selection_policy": {
-    "rule": "Pick the package with the LOWEST ess_kw (best keyword accuracy) whose requires.min_ram_mb <= device_ram AND total_mb <= download_budget. All are offline. The +rescore tiers (3-5) add ~130MB-2.6GB and ~0.4-0.75s/utterance final-pass latency but cut the keyword band ~30-50%; use them whenever the device can hold Vosk. Live captions always stream greedy (low latency); the Vosk rescore only fires on utterance-end.",
-    "fallback": "pizeh-stream (14MB) — runs anywhere.",
-    "accuracy_note": "ess_kw = compound-fair keyword band (importance>=0.8) from the offline double-benchmark; streaming greedy runs slightly higher, the Vosk rescore reaches these."
+    "rule": "Consider packages with dev_only!=true (unless dev mode is on). Pick the LOWEST ess_kw (best keyword accuracy) whose requires.min_ram_mb <= device_ram, min_storage_mb <= storage, total_mb <= download_budget; prefer pareto_optimal. Live captions always stream greedy (low latency); the Vosk rescore fires on utterance-end.",
+    "fallback": "pizeh-vosk-small (111MB) — smallest production package. (In dev mode: pizeh-stream 14MB.)",
+    "accuracy_note": "ess_kw = compound-fair keyword band (importance>=0.8) from the offline double-benchmark; streaming greedy runs slightly higher, the Vosk rescore reaches these.",
+    "dominated_note": "pizeh-vosk-big & rizeh-vosk-big remain Pareto-dominated (koochik-vosk-* is smaller AND better keywords, since Vosk-big's 2.6GB dwarfs the encoder) — kept for completeness, deprioritized in selection."
   }
 }
