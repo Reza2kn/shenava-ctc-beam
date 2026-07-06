@@ -23,6 +23,11 @@ path = "src/main.rs"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+vosk = { version = "0.3", optional = true }
+
+[features]
+# Optional Vosk second-pass glue (src/rescore.rs). Requires libvosk on the link path.
+vosk = ["dep:vosk"]
 
 [profile.release]
 opt-level = 3

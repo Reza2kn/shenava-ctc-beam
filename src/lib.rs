@@ -10,6 +10,8 @@
 
 use std::collections::HashMap;
 
+pub mod rescore;
+
 const BPE: char = '\u{2581}'; // ▁
 
 /// Decoder holds the vocabulary (label per class index) and derived blank id.
