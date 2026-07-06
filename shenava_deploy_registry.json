@@ -1,0 +1,37 @@
+{
+  "schema": "shenava-deploy/1",
+  "updated": "2026-07-05",
+  "note": "Switchable on-device ASR packages. Each = a FastConformer (tract int4, streaming greedy for live captions) + optional Vosk second-pass rescore (utterance-end, keyword-accurate) via shenava-ctc-beam. All offline. App downloads a package on demand and picks the most capable one the device can run.",
+  "shared_runtime": {
+    "engine": "tract (int4, streaming, sonos/tract#2441)",
+    "featurizer": "NeMo log-mel (rust)",
+    "decoder": "shenava-ctc-beam (greedy live + hotword beam rescore)",
+    "vosk": "libvosk FFI (guide tiers only)",
+    "tokens": "ve_tok_v4 BPE-1025, tokens.txt, blank=1024"
+  },
+  "components": {
+    "koochik-int4": { "role": "acoustic", "params_m": 114, "url": "hf://Reza2kn/Shenava-Koochik-v1.0-tract-streaming/model.int4.onnx", "size_mb": 138, "rtf": 0.075 },
+    "rizeh-int4":   { "role": "acoustic", "params_m": 32,  "url": "hf://Reza2kn/Shenava-Rizeh-v1.0-tract-streaming/model.int4.onnx",  "size_mb": 40,  "rtf": 0.027 },
+    "pizeh-int4":   { "role": "acoustic", "params_m": 6.9, "url": "hf://Reza2kn/Shenava-Rizeh-Pizeh-v1.0-tract-streaming/model.int4.onnx", "size_mb": 14, "rtf": 0.018 },
+    "vosk-small-fa":{ "role": "guide", "url": "https://alphacephei.com/vosk/models/vosk-model-small-fa-0.42.zip", "size_mb": 97,   "decode_ms": 400 },
+    "vosk-big-fa":  { "role": "guide", "url": "https://alphacephei.com/vosk/models/vosk-model-fa-0.42.zip",       "size_mb": 2660, "decode_ms": 754 }
+  },
+  "beam_config": { "beam_width": 80, "hotword_weight": 10.0, "token_min_logp": -5.0, "beam_prune_logp": -10.0, "min_hotword_chars": 3 },
+  "packages": [
+    { "id": "pizeh-stream",       "components": ["pizeh-int4"],                    "total_mb": 14,   "mode": "stream-greedy",  "ess_kw": 38.25, "decode_ms": 4,   "requires": { "min_ram_mb": 64,   "offline": true }, "targets": ["32-bit TV", "Cortex-A7", "anything"], "pareto_optimal": true },
+    { "id": "rizeh-stream",       "components": ["rizeh-int4"],                    "total_mb": 40,   "mode": "stream-greedy",  "ess_kw": 18.10, "decode_ms": 6,   "requires": { "min_ram_mb": 128,  "offline": true }, "targets": ["low phone", "set-top box"], "pareto_optimal": true },
+    { "id": "pizeh-vosk-small",   "components": ["pizeh-int4", "vosk-small-fa"],   "total_mb": 111,  "mode": "stream+rescore", "ess_kw": 20.20, "decode_ms": 406, "requires": { "min_ram_mb": 300,  "offline": true }, "targets": ["niche: Vosk fits but 137MB doesn't"], "pareto_optimal": false, "dominated_by": "rizeh-stream (40MB, ess 18.1 — smaller AND better)" },
+    { "id": "rizeh-vosk-small",   "components": ["rizeh-int4", "vosk-small-fa"],   "total_mb": 137,  "mode": "stream+rescore", "ess_kw": 12.30, "decode_ms": 408, "requires": { "min_ram_mb": 300,  "offline": true }, "targets": ["mid phone"], "pareto_optimal": true },
+    { "id": "koochik-stream",     "components": ["koochik-int4"],                  "total_mb": 138,  "mode": "stream-greedy",  "ess_kw": 10.55, "decode_ms": 11,  "requires": { "min_ram_mb": 400,  "offline": true }, "targets": ["mid/high phone (no Vosk)"], "pareto_optimal": true },
+    { "id": "koochik-vosk-small", "components": ["koochik-int4", "vosk-small-fa"], "total_mb": 235,  "mode": "stream+rescore", "ess_kw": 8.75,  "decode_ms": 413, "requires": { "min_ram_mb": 600,  "offline": true }, "targets": ["high phone", "tablet"], "pareto_optimal": true },
+    { "id": "pizeh-vosk-big",     "components": ["pizeh-int4", "vosk-big-fa"],     "total_mb": 2674, "mode": "stream+rescore", "ess_kw": 17.70, "decode_ms": 760, "requires": { "min_ram_mb": 3400, "offline": true, "min_storage_mb": 2900 }, "targets": ["storage-rich but weak-CPU box"], "pareto_optimal": false, "dominated_by": "rizeh-vosk-small (137MB, ess 12.3 — far smaller AND better)" },
+    { "id": "rizeh-vosk-big",     "components": ["rizeh-int4", "vosk-big-fa"],     "total_mb": 2700, "mode": "stream+rescore", "ess_kw": 10.35, "decode_ms": 762, "requires": { "min_ram_mb": 3500, "offline": true, "min_storage_mb": 2900 }, "targets": ["storage-rich mid box"], "pareto_optimal": false, "dominated_by": "koochik-vosk-small (235MB, ess 8.75 — 11x smaller AND better)" },
+    { "id": "koochik-vosk-big",   "components": ["koochik-int4", "vosk-big-fa"],   "total_mb": 2798, "mode": "stream+rescore", "ess_kw": 7.55,  "decode_ms": 767, "requires": { "min_ram_mb": 3500, "offline": true, "min_storage_mb": 3000 }, "targets": ["desktop", "storage-rich box"], "pareto_optimal": true }
+  ],
+  "pareto_note": "Full 3x2 rescore matrix + 3 stream = 9 packages. Only 6 are Pareto-optimal (best ess_kw for their size). The 3 pizeh/rizeh + big-Vosk combos are dominated (a smaller package gives equal-or-better keywords) because Vosk-big's 2.6GB dwarfs the acoustic model, so you might as well pair it with a stronger encoder — or use a Pareto-optimal tier. Kept for completeness / edge device constraints; app selection should prefer pareto_optimal:true unless a hard size/RAM band forces otherwise.",
+  "selection_policy": {
+    "rule": "Pick the package with the LOWEST ess_kw (best keyword accuracy) whose requires.min_ram_mb <= device_ram AND total_mb <= download_budget. All are offline. The +rescore tiers (3-5) add ~130MB-2.6GB and ~0.4-0.75s/utterance final-pass latency but cut the keyword band ~30-50%; use them whenever the device can hold Vosk. Live captions always stream greedy (low latency); the Vosk rescore only fires on utterance-end.",
+    "fallback": "pizeh-stream (14MB) — runs anywhere.",
+    "accuracy_note": "ess_kw = compound-fair keyword band (importance>=0.8) from the offline double-benchmark; streaming greedy runs slightly higher, the Vosk rescore reaches these."
+  }
+}
